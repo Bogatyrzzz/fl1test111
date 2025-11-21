@@ -1,0 +1,10 @@
+{
+  "projectId": "your-project-id",
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "username": "postgres",
+    "password": "your-password",
+    "dbname": "your-db"
+  }
+}

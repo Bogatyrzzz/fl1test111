@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Просмотр базы данных Prisma</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #2d2d2d;
+            border: 1px solid #444444;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #ffd700;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section-title {
+            color: #ffd700;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #ffd700;
+            padding-bottom: 5px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            background: #444444;
+            padding: 15px;
+            border-radius: 4px;
+            text-align: center;
+            border: 1px solid #555555;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00ff00;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #cccccc;
+        }
+        .record {
+            background: #333333;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border-left: 3px solid #ffd700;
+        }
+        .record-header {
+            font-weight: bold;
+            color: #ffd700;
+            margin-bottom: 5px;
+        }
+        .record-content {
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .success { color: #00ff00; }
+        .pending { color: #ffff00; }
+        .error { color: #ff4444; }
+        .timestamp {
+            color: #888888;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .refresh-btn {
+            background: #ffd700;
+            color: #1a1a1a;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin: 20px auto;
+            display: block;
+            text-align: center;
+            font-weight: bold;
+        }
+        .refresh-btn:hover {
+            background: #ffaa00;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            📊 БАЗА ДАННЫХ PRISMA
+        </div>
+
+        <div class="section">
+            <div class="section-title">📈 СТАТИСТИКА</div>
+            <div class="stats" id="stats">
+                <div class="stat-item">
+                    <span class="stat-number" id="totalUsers">-</span>
+                    <span class="stat-label">Всего пользователей</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="verifiedUsers">-</span>
+                    <span class="stat-label">Подтвержденные</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="pendingUsers">-</span>
+                    <span class="stat-label">Ожидают подтверждения</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-number" id="totalCalculations">-</span>
+                    <span class="stat-label">Всего расчетов</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">👥 ПОЛЬЗОВАТЕЛИ</div>
+            <div id="users"></div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">🧮 РАСЧЕТЫ</div>
+            <div id="calculations"></div>
+        </div>
+
+        <button class="refresh-btn" onclick="loadData()">
+            🔄 Обновить данные
+        </button>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                const response = await fetch('/api/debug/view-db');
+                const data = await response.json();
+                
+                if (data.success) {
+                    updateStats(data.data.summary);
+                    updateUsers(data.data.users);
+                    updateCalculations(data.data.calculations);
+                } else {
+                    document.getElementById('stats').innerHTML = '<div style="color: #ff4444; text-align: center;">Ошибка загрузки данных</div>';
+                }
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('stats').innerHTML = '<div style="color: #ff4444; text-align: center;">Ошибка соединения с сервером</div>';
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('totalUsers').textContent = stats.totalUsers;
+            document.getElementById('verifiedUsers').textContent = stats.verifiedUsers;
+            document.getElementById('pendingUsers').textContent = stats.pendingUsers;
+            document.getElementById('totalCalculations').textContent = stats.totalCalculations;
+        }
+
+        function updateUsers(users) {
+            const usersHtml = users.map((user, index) => {
+                const status = user.emailVerified ? 'success' : 'pending';
+                const statusText = user.emailVerified ? '✅ Подтвержден' : '⏳ Ожидает';
+                const statusClass = user.emailVerified ? 'success' : 'pending';
+                
+                return `
+                    <div class="record">
+                        <div class="record-header">#${index + 1}. ${user.email || 'N/A'}</div>
+                        <div class="record-content">
+                            <div>Имя: ${user.fullName || 'N/A'}</div>
+                            <div>Статус: <span class="${statusClass}">${statusText}</span></div>
+                            <div>Код верификации: ${user.verificationCode || 'N/A'}</div>
+                            <div class="timestamp">Создан: ${new Date(user.createdAt).toLocaleString('ru-RU')}</div>
+                            <div class="timestamp">Обновлен: ${new Date(user.updatedAt).toLocaleString('ru-RU')}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('users').innerHTML = usersHtml;
+        }
+
+        function updateCalculations(calculations) {
+            const calculationsHtml = calculations.map((calc, index) => {
+                const status = calc.status === 'completed' ? 'success' : calc.status === 'pending' ? 'pending' : 'error';
+                const statusText = calc.status === 'completed' ? '✅ Завершен' : calc.status === 'pending' ? '⏳ В процессе' : '❌ Ошибка';
+                const statusClass = calc.status === 'completed' ? 'success' : calc.status === 'pending' ? 'pending' : 'error';
+                
+                return `
+                    <div class="record">
+                        <div class="record-header">#${index + 1}. ${calc.type.toUpperCase()} - "${calc.title}"</div>
+                        <div class="record-content">
+                            <div>Пользователь: ${calc.user.email} (${calc.user.fullName})</div>
+                            <div>Статус: <span class="${statusClass}">${statusText}</span></div>
+                            <div class="timestamp">Создан: ${new Date(calc.createdAt).toLocaleString('ru-RU')}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('calculations').innerHTML = calculationsHtml;
+        }
+
+        // Автоматически загружаем данные при загрузке страницы
+        loadData();
+    </script>
+</body>
+</html>
