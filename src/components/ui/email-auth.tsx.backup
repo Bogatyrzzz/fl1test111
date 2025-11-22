@@ -1,0 +1,777 @@
+'use client'
+
+import { useState } from 'react'
+import { AlertCircle, Loader2, Mail, Lock, User, CheckCircle, Shield } from 'lucide-react'
+
+interface EmailAuthProps {
+  onAuth: (userData: { id: string; email: string; fullName: string }) => void
+  onError: (message: string) => void
+}
+
+function EmailAuth({ onAuth, onError }: EmailAuthProps) {
+  const [isLogin, setIsLogin] = useState(true)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [fullName, setFullName] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [showVerification, setShowVerification] = useState(false)
+  const [pendingEmail, setPendingEmail] = useState('')
+  const [isResending, setIsResending] = useState(false)
+
+  const validateEmail = (email: string) => {
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@fl1capital\.com$/
+    return emailRegex.test(email)
+  }
+
+  const handleResendCode = async () => {
+    setIsResending(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const response = await fetch('/api/auth/resend', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: pendingEmail,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+      
+      const data = await response.json()
+      setSuccess(data.message)
+      console.log('🔢 Новый код верификации для demo:', data.verificationCode)
+      
+    } catch (error) {
+      console.error('Resend error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка отправки кода'
+      setError(errorMessage)
+      onError(errorMessage)
+    } finally {
+      setIsResending(false)
+    }
+  }
+
+  const handleVerification = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      setError('Введите 6-значный код')
+      onError('Введите 6-значный код')
+      return
+    }
+
+    setIsLoading(true)
+    setError('')
+    setSuccess('')
+
+    try {
+      const response = await fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: pendingEmail,
+          verificationCode,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+      
+      const data = await response.json()
+
+      setSuccess('Email успешно подтвержден! Теперь вы можете войти.')
+      setShowVerification(false)
+      setVerificationCode('')
+      
+      // Автоматически переключаемся на вход
+      setTimeout(() => {
+        setIsLogin(true)
+        setEmail(pendingEmail)
+        setSuccess('')
+      }, 2000)
+      
+    } catch (error) {
+      console.error('Verification error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка верификации'
+      setError(errorMessage)
+      onError(errorMessage)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setSuccess('')
+    
+    if (!email || !password) {
+      setError('Заполните все поля')
+      onError('Заполните все поля')
+      return
+    }
+
+    if (!validateEmail(email)) {
+      setError('Почта должна быть на домене @fl1capital.com')
+      onError('Почта должна быть на домене @fl1capital.com')
+      return
+    }
+
+    if (!isLogin && !fullName) {
+      setError('Введите ваше имя для регистрации')
+      onError('Введите ваше имя для регистрации')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const response = await fetch('/api/auth/email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          fullName,
+          isLogin,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText}`)
+      }
+      
+      const data = await response.json()
+
+      if (data.requiresVerification) {
+        // Показываем код верификации и переключаемся на экран верификации
+        setSuccess(data.message)
+        setPendingEmail(email)
+        setShowVerification(true)
+        
+        // В реальном приложении здесь был бы console.log с кодом для демонстрации
+        console.log('🔢 Код верификации для demo:', data.verificationCode)
+      } else {
+        // Обычный вход
+        setSuccess(isLogin ? 'Вход выполнен успешно!' : 'Регистрация выполнена успешно!')
+        
+        localStorage.setItem('userEmail', email)
+        
+        onAuth({
+          id: data.user.id,
+          email: data.user.email,
+          fullName: data.user.fullName,
+        })
+      }
+    } catch (error) {
+      console.error('❌ Full error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Ошибка соединения с сервером'
+      setError(errorMessage)
+      onError(errorMessage)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'transparent',
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      paddingTop: '80px',
+      padding: '20px 20px 20px 20px',
+      fontFamily: 'system-ui, -apple-system, sans-serif'
+    }}>
+      {showVerification ? (
+        // Экран верификации
+        <div style={{
+          width: '100%',
+          maxWidth: '400px',
+          backgroundColor: 'rgba(255, 255, 255, 0.98)',
+          borderRadius: '20px',
+          padding: '40px',
+          fontFamily: 'system-ui, -apple-system, sans-serif',
+          color: '#1a1a1a',
+          border: 'none',
+          outline: 'none',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)'
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+            <div style={{
+              width: '70px',
+              height: '70px',
+              backgroundColor: '#CE9332',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 20px',
+              boxShadow: '0 8px 25px rgba(206, 147, 50, 0.25)'
+            }}>
+              <Shield style={{ color: 'white', fontSize: '28px' }} />
+            </div>
+            <h1 style={{ 
+              color: '#1a1a1a',
+              fontSize: '32px',
+              fontWeight: '700',
+              margin: '0',
+              marginBottom: '12px',
+              letterSpacing: '-0.5px'
+            }}>
+              Подтверждение Email
+            </h1>
+            <p style={{ 
+              color: '#666666',
+              fontSize: '16px',
+              lineHeight: '1.6',
+              margin: '0',
+              fontWeight: '400'
+            }}>
+              Введите 6-значный код, отправленный на {pendingEmail}
+            </p>
+          </div>
+
+          {/* Success Message */}
+          {success && (
+            <div style={{
+              marginBottom: '24px',
+              padding: '16px 20px',
+              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+              borderRadius: '12px',
+              border: '1px solid rgba(34, 197, 94, 0.2)',
+              textAlign: 'center'
+            }}>
+              <CheckCircle style={{ color: '#22c55e', marginRight: '8px' }} />
+              <span style={{ color: '#16a34a', fontSize: '15px', fontWeight: '500' }}>{success}</span>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div style={{
+              marginBottom: '24px',
+              padding: '16px 20px',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+              borderRadius: '12px',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              textAlign: 'start'
+            }}>
+              <AlertCircle style={{ color: '#dc2626', marginRight: '8px', marginTop: '2px' }} />
+              <span style={{ color: '#dc2626', fontSize: '15px', fontWeight: '500' }}>{error}</span>
+            </div>
+          )}
+
+          {/* Verification Form */}
+          <form onSubmit={handleVerification} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Verification Code Field */}
+            <div>
+              <label style={{ 
+                color: '#1a1a1a', 
+                fontSize: '15px', 
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '500'
+              }}>
+                <Shield style={{ color: '#CE9332', fontSize: '18px' }} />
+                Код подтверждения
+              </label>
+              <input
+                type="text"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="123456"
+                maxLength={6}
+                required
+                style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  fontSize: '20px',
+                  letterSpacing: '8px',
+                  textAlign: 'center',
+                  border: '1px solid #e5e5e5',
+                  borderRadius: '12px',
+                  backgroundColor: '#ffffff',
+                  color: '#1a1a1a',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  transition: 'all 0.2s ease',
+                  fontFamily: 'monospace'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#CE9332'
+                  e.target.style.boxShadow = '0 0 0 3px rgba(206, 147, 50, 0.1)'
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e5e5e5'
+                  e.target.style.boxShadow = 'none'
+                }}
+              />
+            </div>
+
+            {/* Verify Button */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              style={{
+                width: '100%',
+                padding: '18px 24px',
+                fontSize: '16px',
+                fontWeight: '600',
+                borderRadius: '12px',
+                border: 'none',
+                background: isLoading 
+                  ? 'linear-gradient(135deg, #b87428, #945a24)'
+                  : 'linear-gradient(135deg, #CE9332, #d4a05a)',
+                color: 'white',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                opacity: isLoading ? 0.8 : 1,
+                transition: 'all 0.3s ease',
+                transform: isLoading ? 'scale(0.98)' : 'scale(1)',
+                boxShadow: '0 8px 25px rgba(206, 147, 50, 0.25)',
+                letterSpacing: '0.3px'
+              }}
+              onMouseEnter={(e) => {
+                if (!isLoading) {
+                  e.target.style.background = 'linear-gradient(135deg, #d4a05a, #e6b06b)'
+                  e.target.style.transform = 'scale(1.02)'
+                  e.target.style.boxShadow = '0 12px 35px rgba(206, 147, 50, 0.35)'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isLoading) {
+                  e.target.style.background = 'linear-gradient(135deg, #CE9332, #d4a05a)'
+                  e.target.style.transform = 'scale(1)'
+                  e.target.style.boxShadow = '0 8px 25px rgba(206, 147, 50, 0.25)'
+                }
+              }}
+            >
+              {isLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    width: '18px',
+                    height: '18px',
+                    border: '2px solid rgba(255, 255, 255, 0.3)',
+                    borderRadius: '50%',
+                    borderTop: '2px solid #ffffff',
+                    animation: 'spin 1s linear infinite'
+                  }}></div>
+                  Проверяем код...
+                </div>
+              ) : (
+                'Подтвердить Email'
+              )}
+            </button>
+          </form>
+
+          {/* Back to Login */}
+          <div style={{ textAlign: 'center', marginTop: '32px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowVerification(false)
+                setVerificationCode('')
+                setError('')
+                setSuccess('')
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#666666',
+                fontSize: '15px',
+                cursor: 'pointer',
+                padding: '12px 20px',
+                borderRadius: '8px',
+                transition: 'all 0.2s ease',
+                fontWeight: '400',
+                marginBottom: '12px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(206, 147, 50, 0.1)'
+                e.currentTarget.style.color = '#CE9332'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+                e.currentTarget.style.color = '#666666'
+              }}
+            >
+              ← Назад к входу
+            </button>
+            
+            {/* Resend Code Button */}
+            <button
+              type="button"
+              onClick={handleResendCode}
+              disabled={isResending}
+              style={{
+                background: 'none',
+                border: '1px solid #e5e5e5',
+                color: '#666666',
+                fontSize: '14px',
+                cursor: isResending ? 'not-allowed' : 'pointer',
+                padding: '10px 16px',
+                borderRadius: '6px',
+                transition: 'all 0.2s ease',
+                fontWeight: '400'
+              }}
+              onMouseEnter={(e) => {
+                if (!isResending) {
+                  e.currentTarget.style.backgroundColor = 'rgba(206, 147, 50, 0.05)'
+                  e.currentTarget.style.color = '#CE9332'
+                  e.currentTarget.style.borderColor = '#CE9332'
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isResending) {
+                  e.currentTarget.style.backgroundColor = 'transparent'
+                  e.currentTarget.style.color = '#666666'
+                  e.currentTarget.style.borderColor = '#e5e5e5'
+                }
+              }}
+            >
+              {isResending ? 'Отправляем...' : 'Отправить код повторно'}
+            </button>
+          </div>
+        </div>
+      ) : (
+      <div style={{
+        width: '100%',
+        maxWidth: '400px',
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        borderRadius: '20px',
+        padding: '40px',
+        fontFamily: 'system-ui, -apple-system, sans-serif',
+        color: '#1a1a1a',
+        border: 'none',
+        outline: 'none',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.15)'
+      }}>
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <div style={{
+            width: '70px',
+            height: '70px',
+            backgroundColor: '#CE9332',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px',
+            boxShadow: '0 8px 25px rgba(206, 147, 50, 0.25)'
+          }}>
+            <Mail style={{ color: 'white', fontSize: '28px' }} />
+          </div>
+          <h1 style={{ 
+            color: '#1a1a1a',
+            fontSize: '32px',
+            fontWeight: '700',
+            margin: '0',
+            marginBottom: '12px',
+            letterSpacing: '-0.5px'
+          }}>
+            {isLogin ? 'Вход в систему' : 'Создание аккаунта'}
+          </h1>
+          <p style={{ 
+            color: '#666666',
+            fontSize: '16px',
+            lineHeight: '1.6',
+            margin: '0',
+            fontWeight: '400'
+          }}>
+            {isLogin 
+              ? 'Войдите для доступа к IPO расчетам' 
+              : 'Создайте аккаунт для доступа к IPO расчетам'
+            }
+          </p>
+        </div>
+
+        {/* Success Message */}
+        {success && (
+          <div style={{
+            marginBottom: '24px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            borderRadius: '12px',
+            border: '1px solid rgba(34, 197, 94, 0.2)',
+            textAlign: 'center'
+          }}>
+            <CheckCircle style={{ color: '#22c55e', marginRight: '8px' }} />
+            <span style={{ color: '#16a34a', fontSize: '15px', fontWeight: '500' }}>{success}</span>
+          </div>
+        )}
+
+        {/* Error Message */}
+        {error && (
+          <div style={{
+            marginBottom: '24px',
+            padding: '16px 20px',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            borderRadius: '12px',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            textAlign: 'start'
+          }}>
+            <AlertCircle style={{ color: '#dc2626', marginRight: '8px', marginTop: '2px' }} />
+            <span style={{ color: '#dc2626', fontSize: '15px', fontWeight: '500' }}>{error}</span>
+          </div>
+        )}
+
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Full Name Field (only for registration) */}
+          {!isLogin && (
+            <div>
+              <label style={{ 
+                color: '#1a1a1a', 
+                fontSize: '15px', 
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '500'
+              }}>
+                <User style={{ color: '#CE9332', fontSize: '18px' }} />
+                Полное имя
+              </label>
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Введите ваше имя"
+                required={!isLogin}
+                style={{
+                  width: '100%',
+                  padding: '16px 20px',
+                  fontSize: '16px',
+                  border: '1px solid #e5e5e5',
+                  borderRadius: '12px',
+                  backgroundColor: '#ffffff',
+                  color: '#1a1a1a',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  transition: 'all 0.2s ease'
+                }}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#CE9332'
+                  e.target.style.boxShadow = '0 0 0 3px rgba(206, 147, 50, 0.1)'
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#e5e5e5'
+                  e.target.style.boxShadow = 'none'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Email Field */}
+          <div>
+            <label style={{ 
+                color: '#1a1a1a', 
+                fontSize: '15px', 
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '500'
+              }}>
+                <Mail style={{ color: '#CE9332', fontSize: '18px' }} />
+                Email адрес
+              </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@fl1capital.com"
+              required
+              style={{
+                width: '100%',
+                padding: '16px 20px',
+                fontSize: '16px',
+                border: '1px solid #e5e5e5',
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                color: '#1a1a1a',
+                outline: 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s ease'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#CE9332'
+                e.target.style.boxShadow = '0 0 0 3px rgba(206, 147, 50, 0.1)'
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#e5e5e5'
+                e.target.style.boxShadow = 'none'
+              }}
+            />
+            <div style={{ 
+              fontSize: '13px', 
+              color: '#666666',
+              marginTop: '8px',
+              textAlign: 'center',
+              fontWeight: '400'
+            }}>
+              Только для домена @fl1capital.com
+            </div>
+          </div>
+
+          {/* Password Field */}
+          <div>
+            <label style={{ 
+                color: '#1a1a1a', 
+                fontSize: '15px', 
+                marginBottom: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '500'
+              }}>
+                <Lock style={{ color: '#CE9332', fontSize: '18px' }} />
+                Пароль
+              </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Введите пароль"
+              required
+              style={{
+                width: '100%',
+                padding: '16px 20px',
+                fontSize: '16px',
+                border: '1px solid #e5e5e5',
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                color: '#1a1a1a',
+                outline: 'none',
+                boxSizing: 'border-box',
+                transition: 'all 0.2s ease'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#CE9332'
+                e.target.style.boxShadow = '0 0 0 3px rgba(206, 147, 50, 0.1)'
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#e5e5e5'
+                e.target.style.boxShadow = 'none'
+              }}
+            />
+          </div>
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={isLoading}
+            style={{
+              width: '100%',
+              padding: '18px 24px',
+              fontSize: '16px',
+              fontWeight: '600',
+              borderRadius: '12px',
+              border: 'none',
+              background: isLoading 
+                ? 'linear-gradient(135deg, #b87428, #945a24)'
+                : 'linear-gradient(135deg, #CE9332, #d4a05a)',
+              color: 'white',
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              opacity: isLoading ? 0.8 : 1,
+              transition: 'all 0.3s ease',
+              transform: isLoading ? 'scale(0.98)' : 'scale(1)',
+              boxShadow: '0 8px 25px rgba(206, 147, 50, 0.25)',
+              letterSpacing: '0.3px'
+            }}
+            onMouseEnter={(e) => {
+              if (!isLoading) {
+                e.target.style.background = 'linear-gradient(135deg, #d4a05a, #e6b06b)'
+                e.target.style.transform = 'scale(1.02)'
+                e.target.style.boxShadow = '0 12px 35px rgba(206, 147, 50, 0.35)'
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isLoading) {
+                e.target.style.background = 'linear-gradient(135deg, #CE9332, #d4a05a)'
+                e.target.style.transform = 'scale(1)'
+                e.target.style.boxShadow = '0 8px 25px rgba(206, 147, 50, 0.25)'
+              }
+            }}
+          >
+            {isLoading ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '18px',
+                  height: '18px',
+                  border: '2px solid rgba(255, 255, 255, 0.3)',
+                  borderRadius: '50%',
+                  borderTop: '2px solid #ffffff',
+                  animation: 'spin 1s linear infinite'
+                }}></div>
+                {isLogin ? 'Выполняем вход...' : 'Создаем аккаунт...'}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isLogin ? 'Войти в систему' : 'Создать аккаунт'}
+              </div>
+            )}
+          </button>
+        </form>
+
+        {/* Toggle Auth Mode */}
+        <div style={{ textAlign: 'center', marginTop: '32px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setIsLogin(!isLogin)
+              setError('')
+              setSuccess('')
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#666666',
+              fontSize: '15px',
+              cursor: 'pointer',
+              padding: '12px 20px',
+              borderRadius: '8px',
+              transition: 'all 0.2s ease',
+              fontWeight: '400'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(206, 147, 50, 0.1)'
+              e.currentTarget.style.color = '#CE9332'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent'
+              e.currentTarget.style.color = '#666666'
+            }}
+          >
+            {isLogin 
+              ? 'Нет аккаунта? Создать новый' 
+              : 'Уже есть аккаунт? Войти'
+            }
+          </button>
+        </div>
+      )}
+      </div>
+    </div>
+  )
+}
+
+export default EmailAuth
